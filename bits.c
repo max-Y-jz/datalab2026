@@ -19,7 +19,7 @@
  * Difficulty: 1
  */
 int bitAnd(int x, int y) {
-    return 2;
+    return ~(~x | ~y);              //x&y 的反面是至少一个0, ~x|~y
 }
 
 /*
@@ -30,7 +30,7 @@ int bitAnd(int x, int y) {
  *   Difficulty: 1
  */
 int bitXor(int x, int y) {
-    return 2;
+    return ~(~x & ~y) & ~(x & y);      //x^y = (x|y) & ~(x&y)
 }
 
 /*
@@ -50,7 +50,14 @@ int bitXor(int x, int y) {
  *   1 if x and y have the same sign , 0 otherwise.
  */
 int samesign(int x, int y) {
-    return 2;
+    if(!(x && y))
+        return !x && !y;
+    x = x >> 31;
+    y = y >> 31;
+    if(x ^ y)
+        return 0;
+    else
+        return 1;
 }
 
 /*
@@ -63,7 +70,29 @@ int samesign(int x, int y) {
  *   Difficulty: 4
  */
 int logtwo(int v) {
-    return 2;
+    int r = 0;       //r = 到目前一共找到了多少位
+    int s;              //本次要位移多少位
+
+    s = (v > 0xFFFF) << 4;   //判断在高16位还是低16位
+    //若在高16位，则左移16位，及2^4
+    v = v >> s;      //继续判断位于16位里的哪一部分，除以2^4
+    r = r | s;         //又由于s是2^4,2^3,2^2,2^1, 2^0,所以|可以当作+用
+
+    s = (v > 0xFF) << 3;
+    v = v >> s;
+    r = r | s;
+
+    s = (v > 0xF) << 2;
+    v = v >> s;
+    r = r | s;
+
+    s = (v > 0x3) << 1;
+    v = v >> s;
+    r = r | s;
+
+    r = r | (v > 1);
+
+    return r;
 }
 
 /*
@@ -76,7 +105,14 @@ int logtwo(int v) {
  *    Difficulty: 2
  */
 int byteSwap(int x, int n, int m) {
-    return 2;
+    int ns = n << 3;           //1个字节取8位
+    int ms = m << 3;
+    int a = (x >> ns) & 0xFF;   //用0xFF取最低8位
+    int b = (x >> ms) & 0xFF;
+    int c = a ^ b;    //a ^ (a ^ b) = b；b ^ (a ^ b) = a
+    x = x^(c << ns);
+    x = x^(c << ms);
+    return x;
 }
 
 /*
@@ -88,7 +124,14 @@ int byteSwap(int x, int n, int m) {
  *   Difficulty: 3
  */
 unsigned reverse(unsigned v) {
-    return 2;
+    unsigned ans = 0;
+    int i = 32;
+    while(i){
+        ans = ans<<1 | (v & 1);
+        v = v>> 1;
+        i -= 1;
+    }
+    return ans;
 }
 
 /*
@@ -100,7 +143,8 @@ unsigned reverse(unsigned v) {
  *   Difficulty: 3
  */
 int logicalShift(int x, int n) {
-    return 2;
+    int mask = ~(((1<<31)>>n)<<1);
+    return (x>>n) & mask;
 }
 
 /*
@@ -111,10 +155,35 @@ int logicalShift(int x, int n) {
  *   Max ops: 50
  *   Difficulty: 4
  */
-int leftBitCount(int x) {
-    return 2;
-}
 
+int leftBitCount(int x) {
+    int count = 0;
+    int s;
+
+    s = (!~(x >> 16)) << 4;
+    count = count + s;
+    x = x << s;
+
+    s = (!~(x >> 24)) << 3;
+    count = count + s;
+    x = x << s;
+
+    s = (!~(x >> 28)) << 2;
+    count = count + s;
+    x = x << s;
+
+    s = (!~(x >> 30)) << 1;
+    count = count + s;
+    x = x << s;
+
+    s = !~(x >> 31);
+    count = count + s;
+    x = x << s;
+
+    count = count + ((x >> 31) & 1);
+
+    return count;
+}
 /*
  * float_i2f - Return bit-level equivalent of expression (float) x
  *   Result is returned as unsigned int, but it is to be interpreted as
@@ -123,8 +192,44 @@ int leftBitCount(int x) {
  *   Max ops: 30
  *   Difficulty: 4
  */
+    //单精度浮点数，包含符号、指数、小数。分别占1,8,23位
+    //需要舍去，如果太大的话，超过23位表示。四舍五入
+    //难炸了
 unsigned float_i2f(int x) {
-    return 2;
+    unsigned sign;
+    unsigned ux;
+    unsigned norm;
+    unsigned main;
+    unsigned tail;
+    int e = 31;
+
+    if (x == 0)
+        return 0;
+
+    // 符号位 
+    sign = x & 0x80000000u;
+
+    //取绝对值，用 unsigned 避免 INT_MIN 溢出 
+    ux = x;
+    if (sign)
+        ux = ~ux + 1;
+
+    // 找最高的 1 在第几位 
+    while (!(ux >> e))
+        e = e - 1;
+
+    norm = ux << (31 - e);
+
+    main = norm >> 8;
+    tail = norm & 0xFF;
+
+    if (tail > 0x80) {
+        main = main + 1;
+    } else if (tail == 0x80) {
+        if (main & 1)
+            main = main + 1;
+    }
+    return sign | (((e + 126) << 23) + main);
 }
 
 /*
@@ -139,7 +244,19 @@ unsigned float_i2f(int x) {
  *   Difficulty: 4
  */
 unsigned floatScale2(unsigned uf) {
-    return 2;
+    unsigned sign = uf & 0x80000000u;  //u unsigned int  取出符号
+    unsigned exp = uf & 0x7F800000u;   //找出指数部分
+
+    if (exp == 0x7F800000u)    //处理NaN和无穷
+        return uf;
+
+    if (exp == 0)  //uf为0或者太小了  不能单纯exp + 1
+        return sign | ((uf & 0x7FFFFFFFu) << 1);   //直接位移
+
+    if (exp == 0x7F000000u)    //会溢出
+        return sign | 0x7F800000u;   //所以直接返回
+
+    return uf + (1 << 23);   //正常浮点数exp+1
 }
 
 /*
@@ -155,8 +272,46 @@ unsigned floatScale2(unsigned uf) {
  *   Max ops: 60
  *   Difficulty: 3
  */
+
+ //double 的64位结构 1 ： 11 ： 52
+ //  uf2 - The higher 32 
 int float64_f2i(unsigned uf1, unsigned uf2) {
-    return 2;
+    unsigned sign;
+    unsigned exp;
+    unsigned high;
+    unsigned value;
+    int E;
+    int result;
+
+    sign = uf2 >> 31;
+    exp = (uf2 >> 20) & 0x7FF;  //取出11位的exp
+
+    if (!((exp > 0x7FF) | (exp < 0x7FF)))    //overflow
+        return 0x80000000u;
+
+    E = exp;
+    E = E - 1023;  //算32位下的exp
+
+    if (E < 0)     //太小了，向0取整
+        return 0;
+
+    if (E >= 31)   //overflow
+        return 0x80000000u;
+
+    high = (uf2 & 0xFFFFF) | (1 << 20);   //隐藏的1 + fraction前20位。
+
+    if (E <= 20)
+        value = high >> (20 - E);  //整数部分完全在high里
+    else
+        value = (high << (E - 20)) | (uf1 >> (52 - E));
+
+    result = value; 
+    //整数部分为E+1， high有21位
+
+    if (sign)
+        return -result;
+    else
+        return result;
 }
 
 /*
@@ -173,5 +328,14 @@ int float64_f2i(unsigned uf1, unsigned uf2) {
  *   Difficulty: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    if (x < -149)    //单精度 float 能表示的最小正非零值
+        return 0;
+
+    if (x < -126)   //denormal 的 exponent 字段固定是：00000000
+        return 1 << (x + 149);
+
+    if (x <= 127)
+        return (x + 127) << 23;
+
+    return 0x7F800000u;
 }
